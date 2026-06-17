@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Zenith Reader</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f2a4a">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>#readerHome{display:none!important}
+  /* small deterrents: block long-press "save image"/copy on mobile (does NOT stop screenshots) */
+  body{-webkit-touch-callout:none;-webkit-user-select:none;-ms-user-select:none;user-select:none}
+  #canvas,.pageBox img{-webkit-touch-callout:none;pointer-events:none}</style>
+<style>
+  :root{
+    --navy:#0f2a4a; --navy2:#163a63; --gold:#d4a838; --gold-dark:#b8902a;
+    --bg:#eceff3; --panel:#ffffff; --ink:#1b2733; --muted:#667085;
+    --line:#e4e8ee; --soft:#eef3fa;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:"Segoe UI",system-ui,Arial,sans-serif;background:var(--bg);color:var(--ink);overflow:hidden}
+
+  /* ---------- Open screen ---------- */
+  #open{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px}
+  #open h1{font-size:26px;margin:0 0 4px;color:var(--navy)}
+  #open h1 .g{color:var(--gold)}
+  #open p{color:var(--muted);margin:0 0 24px}
+  .drop{border:2px dashed #b9c4d4;border-radius:16px;padding:40px 50px;background:#fff;cursor:pointer;max-width:520px;transition:.15s}
+  .drop:hover{border-color:var(--gold)}
+  .drop .big{font-size:17px;font-weight:600}
+  .drop .small{color:var(--muted);font-size:13px;margin-top:6px}
+
+  /* ---------- Reader ---------- */
+  #reader{display:none;height:100%;flex-direction:column}
+  .toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;flex-wrap:wrap}
+  .toolbar .title{font-weight:600;font-size:14px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .toolbar .title .g{color:var(--gold)}
+  .grp{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.1);border-radius:9px;padding:3px}
+  .tb{background:transparent;border:none;color:#fff;cursor:pointer;font-size:14px;padding:6px 9px;border-radius:7px;font-weight:600}
+  .tb:hover{background:rgba(255,255,255,.18)}
+  .tb.active{background:var(--gold);color:#2a1d00}
+  .pageinp{width:46px;text-align:center;border:none;border-radius:6px;padding:5px;font-size:13px}
+  .toolbar .sp{flex:1}
+  .search{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.12);border-radius:9px;padding:3px 6px}
+  .search input{background:transparent;border:none;color:#fff;font-size:13px;width:130px;outline:none}
+  .search input::placeholder{color:rgba(255,255,255,.6)}
+
+  .stage{flex:1;display:flex;overflow:hidden}
+  .viewwrap{flex:1;overflow:auto;display:flex;justify-content:center;padding:18px;background:#dfe4ea}
+  .pageBox{position:relative;box-shadow:0 4px 20px rgba(0,0,0,.18);align-self:flex-start;background:#fff}
+  #canvas{display:block}
+  #canvas.dark{filter:invert(1) hue-rotate(180deg)}
+  .textLayer{position:absolute;inset:0;overflow:hidden;line-height:1;opacity:1;text-align:initial;forced-color-adjust:none}
+  .textLayer span{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
+  .textLayer ::selection{background:rgba(212,168,56,.45)}
+  .hl{background:rgba(212,168,56,.42);border-radius:2px}
+
+  /* ---------- Side panel ---------- */
+  .panel{width:300px;background:var(--panel);border-left:1px solid var(--line);display:none;flex-direction:column}
+  .panel.show{display:flex}
+  .ptabs{display:flex;border-bottom:1px solid var(--line)}
+  .ptabs button{flex:1;border:none;background:#fff;padding:11px 4px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent}
+  .ptabs button.on{color:var(--navy);border-bottom-color:var(--gold)}
+  .pbody{flex:1;overflow:auto;padding:12px}
+  .pane{display:none}.pane.on{display:block}
+  .item{border:1px solid var(--line);border-radius:9px;padding:9px 10px;margin-bottom:9px;font-size:13px;background:var(--soft)}
+  .item .pg{font-size:11px;color:var(--gold-dark);font-weight:700;cursor:pointer}
+  .item .pg:hover{text-decoration:underline}
+  .item .txt{margin:3px 0}
+  .item .x{float:right;color:#b94a4a;cursor:pointer;font-weight:700;font-size:13px}
+  .item textarea{width:100%;border:1px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;padding:6px;margin-top:5px;resize:vertical;min-height:46px}
+  .empty{color:var(--muted);font-size:13px;text-align:center;padding:24px 8px}
+  .exportbtn{width:100%;padding:9px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;color:var(--navy);margin-bottom:10px}
+  .exportbtn:hover{background:var(--soft)}
+
+  /* floating highlight colour popup */
+  #hlbtn{position:fixed;display:none;z-index:50;background:#fff;border:1px solid var(--line);border-radius:10px;
+    padding:6px 8px;box-shadow:0 4px 14px rgba(0,0,0,.28);gap:6px;align-items:center}
+  #hlbtn .lbl{font-size:12px;font-weight:700;color:var(--navy);margin-right:2px}
+  #hlbtn .sw{width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.15)}
+  #hlbtn .sw:hover{transform:scale(1.12)}
+  /* persistent highlight marks drawn over the page */
+  .hlmark{position:absolute;pointer-events:none;border-radius:2px;opacity:.4}
+
+  /* progress */
+  .progress{height:6px;background:#cfd6df}
+  .progress > div{height:100%;width:0;background:var(--gold);transition:width .2s}
+
+  #loading{position:fixed;inset:0;background:rgba(255,255,255,.85);display:none;align-items:center;justify-content:center;font-size:16px;color:var(--navy);font-weight:600;z-index:100}
+  @media(max-width:680px){.panel{position:fixed;right:0;top:0;bottom:0;z-index:60;width:84%}.search input{width:90px}}
+</style>
+</head>
+<body>
+
+<button id="installBtn" style="display:none;position:fixed;top:10px;right:10px;z-index:101;background:#25a366;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25)">📲 Install app</button>
+
+<!-- OPEN SCREEN -->
+<div id="open">
+  <h1><span class="g">Zenith</span> Secure Study Reader</h1>
+  <p>Read your notes with highlights, bookmarks, notes &amp; dark mode — everything saved on your device.</p>
+  <div class="drop" id="drop">
+    <div class="big">📖 Click to open your notes</div>
+    <div class="small">PDF or locked .zenlock file · drag it here · stays on this computer.</div>
+  </div>
+  <input type="file" id="file" accept="application/pdf,.zenlock" style="display:none" />
+</div>
+
+<!-- READER -->
+<div id="reader">
+  <div class="toolbar">
+    <button class="tb" id="readerHome" title="Back to home">← Back</button>
+    <div class="title"><span class="g">Zenith</span> · <span id="docTitle">notes</span></div>
+    <div class="grp">
+      <button class="tb" id="prev" title="Previous page">‹</button>
+      <input class="pageinp" id="pageNow" value="1" title="Type a page number and press Enter" />
+      <span style="font-size:12px;opacity:.85">/ <span id="pageTot">1</span></span>
+      <button class="tb" id="next" title="Next page">›</button>
+    </div>
+    <div class="grp">
+      <button class="tb" id="zoomOut" title="Zoom out">A−</button>
+      <span id="zoomLbl" style="font-size:12px;min-width:38px;text-align:center">100%</span>
+      <button class="tb" id="zoomIn" title="Zoom in">A+</button>
+    </div>
+    <button class="tb" id="dark" title="Dark mode">🌙</button>
+    <button class="tb" id="bookmark" title="Bookmark this page">🔖</button>
+    <button class="tb" id="full" title="Full screen">⛶</button>
+    <div class="search">
+      🔍 <input id="searchInp" placeholder="Search notes…" />
+    </div>
+    <div class="sp"></div>
+    <button class="tb" id="panelBtn" title="Highlights, notes &amp; bookmarks">☰ My Stuff</button>
+  </div>
+
+  <div class="stage">
+    <div class="viewwrap" id="viewwrap">
+      <div class="pageBox" id="pageBox">
+        <canvas id="canvas"></canvas>
+        <div class="textLayer" id="textLayer"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel">
+      <div class="ptabs">
+        <button class="on" data-pane="toc">📑 Contents</button>
+        <button data-pane="hl" style="display:none">✏ Highlights</button>
+        <button data-pane="nt">📝 Notes</button>
+        <button data-pane="bm">🔖 Bookmarks</button>
+      </div>
+      <div class="pbody">
+        <div class="pane on" id="paneToc"><div id="tocList"><div class="empty">Open a PDF to see its contents.</div></div></div>
+        <div class="pane" id="paneHl">
+          <button class="exportbtn" id="expHl">⬇ Export all highlights</button>
+          <div id="hlList"></div>
+        </div>
+        <div class="pane" id="paneNt">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Your private note for the page you're reading:</div>
+          <textarea id="pageNote" placeholder="Type a note for this page…" style="width:100%;min-height:90px;border:1px solid var(--line);border-radius:8px;padding:8px;font-family:inherit;font-size:13px;resize:vertical"></textarea>
+          <div style="font-size:12px;color:var(--muted);margin:14px 0 8px">All your page notes:</div>
+          <div id="ntList"></div>
+        </div>
+        <div class="pane" id="paneBm">
+          <div style="display:flex;gap:6px;margin-bottom:12px">
+            <input id="gotoInp" type="number" min="1" placeholder="Page no." style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;font-family:inherit">
+            <button id="gotoBtn" style="background:var(--navy);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer">Go</button>
+          </div>
+          <div id="bmList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="progress"><div id="progBar"></div></div>
+</div>
+
+<div id="hlbtn">
+  <span class="lbl">Highlight:</span>
+  <span class="sw" data-c="#ffe14d" style="background:#ffe14d" title="Yellow"></span>
+  <span class="sw" data-c="#9be7b4" style="background:#9be7b4" title="Green"></span>
+  <span class="sw" data-c="#9cc7ff" style="background:#9cc7ff" title="Blue"></span>
+  <span class="sw" data-c="#ffb3cd" style="background:#ffb3cd" title="Pink"></span>
+</div>
+<div id="loading">Loading…</div>
+
+<!-- password screen for locked (.zenlock) notes -->
+<div id="lockScreen" style="display:none;position:fixed;inset:0;background:rgba(15,42,74,.55);z-index:200;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:26px;width:340px;max-width:90%;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.3)">
+    <div style="font-size:38px">🔒</div>
+    <h3 style="margin:6px 0 2px;color:#0f2a4a">These notes are locked</h3>
+    <div id="lockName" style="color:#667085;font-size:13px;margin-bottom:14px"></div>
+    <input id="lockPw" type="password" placeholder="Enter password" style="width:100%;padding:11px;border:1.5px solid #e4e8ee;border-radius:10px;font-size:15px" />
+    <div id="lockErr" style="color:#c0392b;font-size:13px;min-height:18px;margin:8px 0"></div>
+    <button id="lockGo" style="width:100%;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#d4a838,#b8902a);color:#2a1d00;font-weight:800;font-size:15px;cursor:pointer">Unlock &amp; Read</button>
+    <div id="lockReset" style="display:none;margin-top:12px;font-size:12.5px;color:#0f2a4a;text-decoration:underline;cursor:pointer;text-align:center">↻ Switched to a new device? Reset the device limit</div>
+  </div>
+</div>
+
+<!-- one-time anti-piracy agreement -->
+<div id="agreeScreen" style="display:none;position:fixed;inset:0;background:rgba(15,42,74,.75);z-index:300;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:16px;padding:26px;max-width:440px;width:100%;box-shadow:0 12px 50px rgba(0,0,0,.4)">
+    <div style="font-size:34px;text-align:center">📜</div>
+    <h3 style="margin:6px 0 10px;color:#0f2a4a;text-align:center">Before you read — please agree</h3>
+    <div style="font-size:13.5px;color:#1b2733;line-height:1.6">
+      • This copy is <b>licensed only to you</b> and is <b>uniquely traceable</b> to your name &amp; mobile number.<br>
+      • <b>Do not share, forward, screenshot or post</b> these notes anywhere.<br>
+      • Sharing is a <b>punishable offence</b> (Copyright Act, 1957) and your access will be cancelled.
+    </div>
+    <label style="display:flex;align-items:flex-start;gap:8px;margin:14px 0;font-size:13px;cursor:pointer">
+      <input type="checkbox" id="agreeChk" style="margin-top:3px"> I understand and agree.
+    </label>
+    <button id="agreeGo" style="width:100%;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#d4a838,#b8902a);color:#2a1d00;font-weight:800;font-size:15px;cursor:pointer;opacity:.5" disabled>Agree &amp; Start Reading</button>
+  </div>
+</div>
+
+<script src="pdf.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  if(typeof pdfjsLib === 'undefined'){
+    document.getElementById('open').innerHTML =
+      '<h1 style="color:#0f2a4a">Reading engine not found</h1>'+
+      '<p style="color:#667085">Please keep the <b>lib</b> folder in the same place as this file (don\'t move this file out on its own).</p>';
+    return;
+  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
+
+  // ---- elements ----
+  var $ = function(id){ return document.getElementById(id); };
+  var openScreen=$('open'), reader=$('reader'), drop=$('drop'), fileInput=$('file');
+  var canvas=$('canvas'), ctx=canvas.getContext('2d'), textLayer=$('textLayer');
+  var loading=$('loading');
+
+  var pdf=null, pageNum=1, total=1, scale=1.3, dark=false, key='zsr';
+  var curW=0, curH=0;
+  var store={ last:1, bookmarks:[], highlights:[], notes:{} };
+  var searchIndex=null, rendering=false, renderPending=null;
+
+  // ---------- open file ----------
+  drop.addEventListener('click', function(){ fileInput.click(); });
+  fileInput.addEventListener('change', function(e){ if(e.target.files[0]) openFile(e.target.files[0]); });
+  ['dragover','dragenter'].forEach(function(ev){ drop.addEventListener(ev,function(e){e.preventDefault();drop.style.borderColor='#d4a838';}); });
+  drop.addEventListener('drop', function(e){ e.preventDefault(); if(e.dataTransfer.files[0]) openFile(e.dataTransfer.files[0]); });
+
+  function openFile(f){
+    var isLock=/\.zenlock$/i.test(f.name);
+    if(!isLock && !/\.pdf$/i.test(f.name) && f.type!=='application/pdf'){ alert('Please choose a PDF or a locked .zenlock file.'); return; }
+    key = 'zsr-' + f.name + '-' + f.size;
+    loadStore();
+    var fr = new FileReader();
+    fr.onload = function(){
+      if(isLock){ handleLocked(fr.result, f); }
+      else { startPdf(new Uint8Array(fr.result), f.name.replace(/\.pdf$/i,'')); }
+    };
+    if(isLock) fr.readAsText(f); else fr.readAsArrayBuffer(f);
+  }
+
+  function startPdf(data, title){
+    show(loading,true);
+    pdfjsLib.getDocument({data:data}).promise.then(function(doc){
+      pdf=doc; total=doc.numPages;
+      $('pageTot').textContent=total;
+      $('docTitle').textContent = (title||'notes').slice(0,40);
+      openScreen.style.display='none';
+      $('lockScreen').style.display='none';
+      reader.style.display='flex';
+      var zb=document.getElementById('zReaderBack'); if(zb) zb.style.display='none';
+      maybeAgree();
+      pageNum = Math.min(store.last||1, total);
+      renderPage();
+      refreshPanels();
+      buildTOC();
+      if(pageNum>1){ flash('▶ Resumed where you left off — page '+pageNum+' of '+total); }
+    }).catch(function(err){
+      show(loading,false);
+      if(/password/i.test(err.message||'')){ alert('This PDF is password-protected at the PDF level. Please open an unlocked copy.'); }
+      else { alert('Could not open this file. Please try another.'); }
+    });
+  }
+
+  // ----- locked .zenlock files -----
+  var lockPkg=null;
+  function handleLocked(text, f){
+    var pkg; try{ pkg=JSON.parse(text); }catch(e){ alert('This locked file looks damaged.'); return; }
+    if(!pkg || pkg.app!=='zenith-locker'){ alert('This is not a valid Zenith locked file.'); return; }
+    if(!window.crypto || !crypto.subtle){ alert('Please open this in Chrome or Edge to unlock notes.'); return; }
+    lockPkg=pkg;
+    $('lockName').textContent=(pkg.name||'notes');
+    $('lockErr').textContent=''; $('lockPw').value='';
+    $('lockScreen').style.display='flex';
+    setTimeout(function(){ $('lockPw').focus(); },50);
+  }
+  $('lockGo').onclick=tryUnlock;
+  $('lockPw').addEventListener('keydown', function(e){ if(e.key==='Enter') tryUnlock(); });
+  $('lockReset').onclick=function(){ if(lockPkg){ try{ localStorage.removeItem('zenlock-devices-'+lockPkg.fileId); }catch(e){} } $('lockReset').style.display='none'; $('lockErr').textContent='✓ Device limit reset — enter the password and open.'; };
+  function tryUnlock(){
+    var pw=$('lockPw').value;
+    if(!pw){ $('lockErr').textContent='Please enter the password.'; return; }
+    // device-limit check (allow up to N devices)
+    if(lockPkg.deviceLock){
+      var limit=lockPkg.deviceLimit||1, dk='zenlock-devices-'+lockPkg.fileId, me=deviceToken();
+      var list=[]; try{ list=JSON.parse(localStorage.getItem(dk))||[]; }catch(e){}
+      if(list.indexOf(me)<0 && list.length>=limit){ $('lockErr').textContent='These notes are already opened on '+limit+' device(s).'; $('lockReset').style.display='block'; return; }
+    }
+    $('lockErr').textContent='Unlocking…'; $('lockGo').disabled=true;
+    unlock(lockPkg, pw).then(function(bytes){
+      if(lockPkg.deviceLock){
+        var lim=lockPkg.deviceLimit||1, dk2='zenlock-devices-'+lockPkg.fileId, me2=deviceToken();
+        var l2=[]; try{ l2=JSON.parse(localStorage.getItem(dk2))||[]; }catch(e){}
+        if(l2.indexOf(me2)<0 && l2.length<lim){ l2.push(me2); try{ localStorage.setItem(dk2, JSON.stringify(l2)); }catch(e){} }
+      }
+      $('lockGo').disabled=false;
+      startPdf(bytes, lockPkg.name);
+    }).catch(function(){
+      $('lockGo').disabled=false;
+      $('lockErr').textContent='Wrong password. Please try again.';
+    });
+  }
+  function b64ToBytes(b64){ var bin=atob(b64),n=bin.length,a=new Uint8Array(n); for(var i=0;i<n;i++)a[i]=bin.charCodeAt(i); return a; }
+  function unlock(pkg, password){
+    var enc=new TextEncoder();
+    var salt=b64ToBytes(pkg.salt), iv=b64ToBytes(pkg.iv), data=b64ToBytes(pkg.data);
+    return crypto.subtle.importKey('raw',enc.encode(password),'PBKDF2',false,['deriveKey'])
+      .then(function(base){ return crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:120000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']); })
+      .then(function(k){ return crypto.subtle.decrypt({name:'AES-GCM',iv:iv},k,data); })
+      .then(function(pt){ return new Uint8Array(pt); });
+  }
+  function deviceToken(){ var t=localStorage.getItem('zenith-device'); if(!t){ var a=crypto.getRandomValues(new Uint8Array(8)),s=''; for(var i=0;i<a.length;i++)s+=('0'+a[i].toString(16)).slice(-2); t=s; localStorage.setItem('zenith-device',t);} return t; }
+
+  // ----- one-time anti-piracy agreement -----
+  function maybeAgree(){
+    try{ if(localStorage.getItem('zenith-agreed')==='1') return; }catch(e){ return; }
+    $('agreeScreen').style.display='flex';
+  }
+  $('agreeChk').addEventListener('change', function(){ $('agreeGo').disabled=!this.checked; $('agreeGo').style.opacity=this.checked?'1':'.5'; });
+  $('agreeGo').onclick=function(){ try{ localStorage.setItem('zenith-agreed','1'); }catch(e){} $('agreeScreen').style.display='none'; };
+
+  // ---------- storage ----------
+  function loadStore(){
+    try{ var s=localStorage.getItem(key); if(s) store=JSON.parse(s); }catch(e){}
+    if(!store.bookmarks) store.bookmarks=[];
+    if(!store.highlights) store.highlights=[];
+    if(!store.notes) store.notes={};
+  }
+  function save(){ try{ store.last=pageNum; localStorage.setItem(key, JSON.stringify(store)); }catch(e){} }
+
+  // ---------- render ----------
+  function renderPage(){
+    if(!pdf) return;
+    if(rendering){ renderPending=pageNum; return; }
+    rendering=true; show(loading,true);
+    pdf.getPage(pageNum).then(function(page){
+      var viewport = page.getViewport({scale:scale});
+      var ratio = window.devicePixelRatio||1;
+      canvas.width = Math.floor(viewport.width*ratio);
+      canvas.height = Math.floor(viewport.height*ratio);
+      canvas.style.width = Math.floor(viewport.width)+'px';
+      canvas.style.height = Math.floor(viewport.height)+'px';
+      $('pageBox').style.width = Math.floor(viewport.width)+'px';
+      $('pageBox').style.height = Math.floor(viewport.height)+'px';
+      curW = Math.floor(viewport.width); curH = Math.floor(viewport.height);
+      var rc = { canvasContext:ctx, viewport:viewport, transform: ratio!==1 ? [ratio,0,0,ratio,0,0] : null };
+      return page.render(rc).promise.then(function(){
+        return buildTextLayer(page, viewport);
+      }).then(function(){
+        rendering=false; show(loading,false);
+        $('pageNow').value=pageNum;
+        $('progBar').style.width = (pageNum/total*100)+'%';
+        canvas.className = dark?'dark':'';
+        loadPageNote();
+        drawHighlights();
+        save();
+        if(renderPending!==null){ var p=renderPending; renderPending=null; if(p!==pageNum){pageNum=p;} renderPage(); }
+      });
+    }).catch(function(){ rendering=false; show(loading,false); renderPending=null; });
+  }
+
+  function buildTextLayer(page, viewport){
+    textLayer.innerHTML='';
+    textLayer.style.width = Math.floor(viewport.width)+'px';
+    textLayer.style.height = Math.floor(viewport.height)+'px';
+    return page.getTextContent().then(function(tc){
+      try{
+        tc.items.forEach(function(item){
+          if(!item.str) return;
+          var tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+          var fontH = Math.hypot(tx[2], tx[3]);
+          if(!fontH) return;
+          var span=document.createElement('span');
+          span.textContent=item.str;
+          span.style.left=tx[4]+'px';
+          span.style.top=(tx[5]-fontH)+'px';
+          span.style.fontSize=fontH+'px';
+          span.style.fontFamily='sans-serif';
+          // stretch to match original text width
+          var w = item.width*viewport.scale;
+          if(w>0 && span.style.fontSize){ span.style.letterSpacing='0'; }
+          textLayer.appendChild(span);
+        });
+      }catch(e){ /* reading still works without selectable text */ }
+    });
+  }
+
+  // ---------- navigation ----------
+  function goto(n){ n=Math.max(1,Math.min(total,n)); if(n!==pageNum){pageNum=n;} renderPage(); }
+
+  // ---------- table of contents (from the PDF's own outline) ----------
+  function buildTOC(){
+    var box=$('tocList');
+    if(!pdf || !pdf.getOutline){ return; }
+    pdf.getOutline().then(function(outline){
+      if(!outline || !outline.length){ box.innerHTML='<div class="empty">This PDF has no built-in table of contents.<br>Use 🔖 Bookmarks instead.</div>'; return; }
+      box.innerHTML='';
+      (function render(items,depth){
+        items.forEach(function(it){
+          var d=document.createElement('div');
+          d.className='item'; d.style.cursor='pointer'; d.style.marginLeft=(depth*12)+'px'; d.style.padding='7px 9px';
+          d.textContent=(depth?'• ':'')+(it.title||'(untitled)');
+          d.onclick=function(){ gotoDest(it.dest); };
+          box.appendChild(d);
+          if(it.items && it.items.length) render(it.items,depth+1);
+        });
+      })(outline,0);
+    }).catch(function(){ box.innerHTML='<div class="empty">Contents not available for this PDF.</div>'; });
+  }
+  function gotoDest(dest){
+    if(!dest) return;
+    try{
+      var p=(typeof dest==='string')? pdf.getDestination(dest) : Promise.resolve(dest);
+      Promise.resolve(p).then(function(arr){
+        if(!arr || !arr[0]) return;
+        return pdf.getPageIndex(arr[0]).then(function(idx){ goto(idx+1); });
+      }).catch(function(){});
+    }catch(e){}
+  }
+  $('prev').onclick=function(){ goto(pageNum-1); };
+  $('next').onclick=function(){ goto(pageNum+1); };
+  $('readerHome').onclick=function(){ if(history.length>1){history.back();}else{location.href='Zenith Study Kit.html';} };
+  $('pageNow').addEventListener('change', function(){ var v=parseInt(this.value,10); if(v) goto(v); else this.value=pageNum; });
+  $('pageNow').addEventListener('keydown', function(e){ if(e.key==='Enter'){ var v=parseInt(this.value,10); if(v) goto(v); this.blur(); } });
+  $('pageNow').addEventListener('focus', function(){ this.select(); });
+  $('gotoBtn').onclick=function(){ var v=parseInt($('gotoInp').value,10); if(v){ goto(v); $('gotoInp').value=''; } };
+  $('gotoInp').addEventListener('keydown', function(e){ if(e.key==='Enter'){ var v=parseInt(this.value,10); if(v){ goto(v); this.value=''; } } });
+  document.addEventListener('keydown', function(e){
+    if(reader.style.display==='none') return;
+    if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+    if(e.key==='ArrowRight'||e.key==='PageDown') goto(pageNum+1);
+    if(e.key==='ArrowLeft'||e.key==='PageUp') goto(pageNum-1);
+  });
+
+  // ---------- zoom ----------
+  function setZoom(s){ scale=Math.max(0.6,Math.min(3,s)); $('zoomLbl').textContent=Math.round(scale/1.3*100)+'%'; renderPage(); }
+  $('zoomIn').onclick=function(){ setZoom(scale+0.2); };
+  $('zoomOut').onclick=function(){ setZoom(scale-0.2); };
+
+  // ---------- dark / fullscreen ----------
+  $('dark').onclick=function(){ dark=!dark; this.classList.toggle('active',dark); canvas.className=dark?'dark':''; };
+  $('full').onclick=function(){ if(!document.fullscreenElement){ document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen(); } else { document.exitFullscreen&&document.exitFullscreen(); } };
+
+  // ---------- bookmark ----------
+  $('bookmark').onclick=function(){
+    var i=store.bookmarks.indexOf(pageNum);
+    if(i>=0){ store.bookmarks.splice(i,1); } else { store.bookmarks.push(pageNum); store.bookmarks.sort(function(a,b){return a-b;}); }
+    save(); refreshPanels();
+    flash(i>=0?'Bookmark removed':'Page '+pageNum+' bookmarked');
+  };
+
+  // ---------- highlight ----------
+  var hlbtn=$('hlbtn');
+  function onSelectEnd(){ hlbtn.style.display='none'; } // highlighting removed — notes are images, text isn't selectable
+  document.addEventListener('mouseup', onSelectEnd);
+  document.addEventListener('touchend', onSelectEnd);   // works on phones/tablets too
+  hlbtn.querySelectorAll('.sw').forEach(function(sw){
+    sw.onclick=function(){
+      if(hlbtn._text){
+        store.highlights.push({ page:hlbtn._page||pageNum, text:hlbtn._text, color:sw.dataset.c, rects:hlbtn._rects||[], note:'' });
+        save(); refreshPanels(); drawHighlights(); flash('Highlight saved');
+      }
+      hlbtn.style.display='none';
+      window.getSelection().removeAllRanges();
+    };
+  });
+
+  // draw the saved highlight marks over the current page
+  function drawHighlights(){
+    var pbx=$('pageBox');
+    var old=pbx.querySelectorAll('.hlmark'); for(var i=0;i<old.length;i++){ old[i].remove(); }
+    store.highlights.forEach(function(hl){
+      if(hl.page!==pageNum || !hl.rects || !hl.rects.length) return;
+      hl.rects.forEach(function(r){
+        var d=document.createElement('div'); d.className='hlmark';
+        d.style.left=(r.x*curW)+'px'; d.style.top=(r.y*curH)+'px';
+        d.style.width=(r.w*curW)+'px'; d.style.height=(r.h*curH)+'px';
+        d.style.background=hl.color||'#ffe14d';
+        pbx.appendChild(d);
+      });
+    });
+  }
+
+  // ---------- panel ----------
+  $('panelBtn').onclick=function(){ $('panel').classList.toggle('show'); this.classList.toggle('active'); };
+  document.querySelectorAll('.ptabs button').forEach(function(b){
+    b.onclick=function(){
+      document.querySelectorAll('.ptabs button').forEach(function(x){x.classList.remove('on');});
+      document.querySelectorAll('.pane').forEach(function(x){x.classList.remove('on');});
+      b.classList.add('on');
+      $('pane'+b.dataset.pane.charAt(0).toUpperCase()+b.dataset.pane.slice(1)).classList.add('on');
+    };
+  });
+
+  function refreshPanels(){
+    // highlights
+    var h=$('hlList');
+    if(!store.highlights.length){ h.innerHTML='<div class="empty">No highlights yet.<br>Select text on a page, then pick a colour.</div>'; }
+    else{
+      h.innerHTML='';
+      store.highlights.forEach(function(it,idx){
+        var d=document.createElement('div'); d.className='item';
+        var dot='<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:'+(it.color||'#ffe14d')+';margin-right:6px;vertical-align:middle"></span>';
+        d.innerHTML='<span class="x" data-i="'+idx+'">✕</span>'+dot+'<span class="pg" data-p="'+it.page+'">Page '+it.page+'</span>'+
+          '<div class="txt">'+esc(it.text)+'</div>'+
+          '<input class="hlnote" data-hn="'+idx+'" placeholder="✎ add a note…" value="'+esc(it.note||'')+'" style="width:100%;margin-top:6px;border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:12.5px;font-family:inherit">';
+        h.appendChild(d);
+      });
+    }
+    // bookmarks
+    var b=$('bmList');
+    if(!store.bookmarks.length){ b.innerHTML='<div class="empty">No bookmarks yet.<br>Tap 🔖 to bookmark a page.</div>'; }
+    else{
+      b.innerHTML='';
+      store.bookmarks.forEach(function(p){
+        var d=document.createElement('div'); d.className='item';
+        d.innerHTML='<span class="x" data-bm="'+p+'">✕</span><span class="pg" data-p="'+p+'">Go to page '+p+'</span>';
+        b.appendChild(d);
+      });
+    }
+    // notes list
+    var n=$('ntList'); var keys=Object.keys(store.notes).filter(function(k){return store.notes[k];});
+    if(!keys.length){ n.innerHTML='<div class="empty">No page notes yet.</div>'; }
+    else{
+      n.innerHTML='';
+      keys.sort(function(a,b){return a-b;}).forEach(function(p){
+        var d=document.createElement('div'); d.className='item';
+        d.innerHTML='<span class="pg" data-p="'+p+'">Page '+p+'</span><div class="txt">'+esc(store.notes[p])+'</div>';
+        n.appendChild(d);
+      });
+    }
+    bindPanel();
+  }
+  function bindPanel(){
+    document.querySelectorAll('.pg').forEach(function(el){ el.onclick=function(){ goto(parseInt(el.dataset.p,10)); }; });
+    document.querySelectorAll('.x[data-i]').forEach(function(el){ el.onclick=function(){ store.highlights.splice(parseInt(el.dataset.i,10),1); save(); refreshPanels(); drawHighlights(); }; });
+    document.querySelectorAll('.hlnote').forEach(function(el){ el.oninput=function(){ var it=store.highlights[parseInt(el.dataset.hn,10)]; if(it){ it.note=el.value; save(); } }; });
+    document.querySelectorAll('.x[data-bm]').forEach(function(el){ el.onclick=function(){ var p=parseInt(el.dataset.bm,10); var i=store.bookmarks.indexOf(p); if(i>=0){store.bookmarks.splice(i,1);} save(); refreshPanels(); }; });
+  }
+
+  // page note
+  $('pageNote').addEventListener('input', function(){ store.notes[pageNum]=this.value; save(); });
+  function loadPageNote(){ $('pageNote').value = store.notes[pageNum]||''; }
+
+  // export highlights
+  $('expHl').onclick=function(){
+    if(!store.highlights.length){ flash('No highlights to export'); return; }
+    var txt='ZENITH — MY HIGHLIGHTS\n'+($('docTitle').textContent)+'\n\n';
+    store.highlights.forEach(function(it){ txt+='[Page '+it.page+']  '+it.text+(it.note?'\n   ✎ '+it.note:'')+'\n\n'; });
+    var blob=new Blob([txt],{type:'text/plain'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='My Highlights.txt'; a.click();
+  };
+
+  // ---------- search ----------
+  $('searchInp').addEventListener('keydown', function(e){ if(e.key==='Enter') doSearch(this.value.trim()); });
+  function doSearch(q){
+    if(!q){ return; }
+    if(!searchIndex){
+      show(loading,true);
+      buildIndex().then(function(){ show(loading,false); runSearch(q); });
+    } else runSearch(q);
+  }
+  function buildIndex(){
+    searchIndex=[];
+    var chain=Promise.resolve();
+    for(var i=1;i<=total;i++){ (function(p){
+      chain=chain.then(function(){ return pdf.getPage(p).then(function(pg){ return pg.getTextContent(); }).then(function(tc){
+        searchIndex[p]=tc.items.map(function(x){return x.str;}).join(' ').toLowerCase();
+      }); });
+    })(i); }
+    return chain;
+  }
+  var lastQuery='', hitList=[], hitPos=0;
+  function runSearch(q){
+    var ql=q.toLowerCase();
+    if(ql===lastQuery && hitList.length){
+      hitPos=(hitPos+1)%hitList.length;            // press Enter again → next match
+    } else {
+      hitList=[]; for(var p=1;p<=total;p++){ if(searchIndex[p] && searchIndex[p].indexOf(ql)>=0) hitList.push(p); }
+      lastQuery=ql; hitPos=0;
+    }
+    if(!hitList.length){ flash('“'+q+'” not found'); return; }
+    flash('Match '+(hitPos+1)+' of '+hitList.length+' — page '+hitList[hitPos]+' (Enter for next)');
+    goto(hitList[hitPos]);
+  }
+
+  // ---------- helpers ----------
+  function show(el,on){ el.style.display=on?'flex':'none'; }
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  var fl=null;
+  function flash(msg){
+    if(fl) fl.remove();
+    fl=document.createElement('div');
+    fl.textContent=msg;
+    fl.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#0f2a4a;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;z-index:200;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+    document.body.appendChild(fl);
+    setTimeout(function(){ if(fl){fl.remove(); fl=null;} },1800);
+  }
+
+  // block casual copying / right-click (light deterrent only)
+  document.addEventListener('contextmenu', function(e){ if(reader.style.display!=='none') e.preventDefault(); });
+
+  // ----- open a file from the URL (?file=...) so a shared link opens it directly -----
+  function loadFromUrl(url){
+    var isLock=/\.zenlock(\?|$)/i.test(url);
+    fetch(url).then(function(r){ if(!r.ok) throw new Error('not found'); return isLock ? r.text() : r.arrayBuffer(); }).then(function(content){
+      try{ localStorage.setItem('zenith-last-file', url); }catch(e){}   // remember it, so the installed icon reopens it later
+      var fname=decodeURIComponent((url.split('/').pop()||'notes').split('?')[0]);
+      key='zsr-web-'+fname; loadStore();
+      if(isLock){ handleLocked(content, {name:fname}); }
+      else { startPdf(new Uint8Array(content), fname.replace(/\.pdf$/i,'')); }
+    }).catch(function(){ openScreen.style.display='block'; });
+  }
+  var fileParam=new URLSearchParams(location.search).get('file');
+  var lastFile=null; try{ lastFile=localStorage.getItem('zenith-last-file'); }catch(e){}
+  if(fileParam){ openScreen.style.display='none'; loadFromUrl(fileParam); }
+  else if(lastFile){ openScreen.style.display='none'; loadFromUrl(lastFile); }   // reopen the app icon → your last notes (works offline once cached)
+})();
+</script>
+<script>
+  /* PWA: register service worker + handle the Install button */
+  if('serviceWorker' in navigator){ window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); }); }
+  var zDeferred=null;
+  window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); zDeferred=e; var b=document.getElementById('installBtn'); if(b) b.style.display='inline-block'; });
+  (function(){ var b=document.getElementById('installBtn'); if(b){ b.onclick=function(){ if(zDeferred){ zDeferred.prompt(); zDeferred=null; b.style.display='none'; } }; } })();
+</script>
+</body>
+</html>
